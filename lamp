@@ -1,0 +1,114 @@
+#!/usr/bin/bash
+
+echo -e "\e[42m create lamp environment for wordpress \e[0m"
+echo -e "\e[42m ask centos7.9 \e[0m"
+
+#usr define here
+DATABASE_PASSWARD="Zyh@mysql1"
+DATABASE_NAME="wordpress"
+DATABASE_USER="wordpressuser"
+#DATABASE_PASSWARD="Zyh@mysql1"
+#DATABASE_NAME="soultopia"
+#DATABASE_USER="soultopiar"
+#usr define above
+
+CHANGE_PASSWRAD="set global validate_password_policy=0;alter user 'root'@'localhost' identified by '"${DATABASE_PASSWARD}"';"
+CREATE_DATABASE="create database "${DATABASE_NAME}";"
+CREATE_USER="create user '"${DATABASE_USER}"'@'%' identified by '"${DATABASE_PASSWARD}"';"
+AUTHORIZATION="grant all privileges on "${DATABASE_NAME}".* to '"${DATABASE_USER}"'@'%'identified by '"${DATABASE_PASSWARD}"';show databases;flush privileges;"
+MYSQL_CMD=${CHANGE_PASSWRAD}${CREATE_DATABASE}${CREATE_USER}${AUTHORIZATION}
+#echo $MYSQL_CMD
+
+echo -e "\e[42m install remi and EPEL respository \e[0m"
+yum -y install epel-release &&
+#rpm -Uvh http://rmps.famillecollet.com/enterprise/remi-release-7.rpm &&
+yum -y install http://rpms.famillecollet.com/enterprise/remi-release-7.rpm
+
+if [ $? -ne 0 ]; then
+    echo -e "\033[30m install remi or epel failed \033[0m"
+    #exit 1
+else
+    echo -e "\033[42m install remi and epel succeed \033[0m"
+fi
+
+echo -e "\e[42m install apache2.4 \e[0m"
+yum -y install httpd httpd-manual mod_ssl mod_perl mod_auth_mysql
+if [ $? -ne 0 ]; then
+    echo -e "\e[30m install apache failed \033[0m"
+    exit 1
+else
+    echo -e "\e[42m install apache succeed \033[0m"
+    systemctl start httpd.service
+fi
+
+echo -e "\e[42m install mysql-server5.7 \e[0m"
+rpm -Uvh http://dev.mysql.com/get/mysql57-community-release-el7-10.noarch.rpm &&
+#yum -y install mysql57-community-release-el7-10.noarch.rpm &&
+yum -y --enablerepo=mysql57-community install mysql-community-server
+yum -y install mysql &&
+if [ $? -ne 0 ]; then
+    echo -e "\e[30m install mysql-server failed \e[0m"
+    #exit 1
+else
+    echo -e "\e[42m install mysql-server succeed \e[0m"
+    systemctl start mysqld.service
+fi
+ 
+echo -e "\e[42m search passward of mysql \e[0m"
+DEFAULT_DATABASE_PASSWARD=`grep 'A temporary password is generated for root@localhost:' /var/log/mysqld.log | sed 's/^.*A temporary password is generated for root@localhost:\s*\(.*\)\s*$/\1/g'` &&
+echo $DEFAULT_DATABASE_PASSWARD
+mysql --connect-expired-password -uroot -p${DEFAULT_DATABASE_PASSWARD} -e "${MYSQL_CMD}"
+#mysql -uroot -p${DEFAULT_DATABASE_PASSWARD} -e "${MYSQL_CMD}"
+if [ $? -ne 0 ]; then
+    echo -e "\e[30m create mysql database and user failed \e[0m"
+    exit 1
+else
+    echo -e "\e[42m create mysql database and user succeed \e[0m"
+    systemctl start mysqld.service
+fi
+
+echo -e "\e[42m install php7.4 \e[0m"
+yum -y --enablerepo=remi-php74 install php &&
+yum -y --enablerepo=remi-php74 install php-xml php-soap php-xmlrpc php-mbstring php-json php-gd php-mcrypt php-fpm php-mysql php-mysqlnd &&
+echo -e "<?php phpinfo(); ?>" > /var/www/html/phpinfo.php
+if [ $? -ne 0 ]; then
+    echo -e "\033[30m install php failed \033[0m"
+    exit 1
+else
+    echo -e "\e[42m install php succeed \e[0m"
+    systemctl start httpd
+fi
+
+#echo -e "\e[42m install phpmyadmin \e[0m"
+#yum -y --enablerepo=epel install phpmyadmin &&
+#sed 's/^/(\s*Require ip 127.0.0.1/)$/#\1/g' /etc/httpd/conf.d/phpmyadmin.conf &&
+#sed 's/^/(\s*Require ip ::1/)$/#\1\nRequire all granted/g' /etc/httpd/conf.d/phpmyadmin.conf
+#if [ $? -ne 0 ]; then
+#    echo -e "\e[30m install phpmyadmin failed \e[0m"
+#    exit 1
+#else
+#    echo -e "\e[42m install phpmyadmin succeed \e[0m"
+#    systemctl start httpd
+#fi
+
+echo -e "\e[42m install wordpress \e[0m"
+#weget https://wordpress.org/latest.tar.gz
+tar -zxf wordpress-5.8.tar.gz --strip-components=1 -C /var/www/html/ &&
+cp /var/www/html/wp-config-sample.php /var/www/html/wp-config.php &&
+
+echo -e "\e[42m config wordpress \e[0m"
+sed -i 's/database_name_here/'${DATABASE_NAME}'/' /var/www/html/wp-config.php &&
+sed -i 's/username_here/'${DATABASE_USER}'/' /var/www/html/wp-config.php &&
+sed -i 's/password_here/'${DATABASE_PASSWARD}'/' /var/www/html/wp-config.php &&
+unzip -o kratos-main.zip -d /var/www/html/wp-content/themes &&
+tar -zxf wp-editormd.tar.gz --strip-components=1 -C /var/www/html/wp-content/plugins &&
+cp uploads /var/www/html/wp-content/ -rf &&
+
+echo -e "\e[42m recover wordpress database backup \e[0m"
+#mysqldump -uroot -p${DATABASE_PASSWARD} --databases ${DATABASE_NAME} < wordpress_mysql_bk.sql
+mysql -uroot -p${DATABASE_PASSWARD} -e "show databases;use ${DATABASE_NAME};source wordpress_mysql_bk.sql;" &&
+systemctl restart httpd &&
+
+echo -e "\e[42m lamp create finished \e[0m"
+
+
