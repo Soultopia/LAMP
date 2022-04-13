@@ -112,3 +112,4 @@ systemctl restart httpd &&
 echo -e "\e[42m lamp create finished \e[0m"
 
 
+#mysqldump -u root -p --databases wordpress > wordpress.sql
